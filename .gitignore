@@ -1,10 +1,12 @@
-tyk-pro
 tyk-dashboard/
 tyk-gateway/
 tyk-pump/
 output.yaml
 values_real.yaml
 **/.DS_Store
+
+!tyk-pro/mounts/.gitkeep
+tyk-pro/mounts/*
 
 !tyk-hybrid/mounts/.gitkeep
 tyk-hybrid/mounts/*
@@ -13,3 +15,5 @@ tyk-hybrid/mounts/*
 tyk-headless/mounts/*
 
 **copy.yaml
+
+*.tgz
