@@ -1,0 +1,204 @@
+{{- if .Values.global.gateway.enabled -}}
+apiVersion: apps/v1
+kind: {{ .Values.global.gateway.kind }}
+metadata:
+  name: gateway-{{ include "tyk-pro.fullname" . }}
+  labels:
+    app: gateway-{{ include "tyk-pro.fullname" . }}
+    chart: {{ include "tyk-pro.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+{{- if eq .Values.global.gateway.kind "Deployment" }}
+  replicas: {{ .Values.global.gateway.replicaCount }}
+{{- end }}
+  minReadySeconds: 10
+{{- if eq .Values.global.gateway.kind "Deployment" }}
+  strategy:
+{{- else }}
+  updateStrategy:
+{{- end }}
+    # indicate which strategy we want for rolling update
+    type: RollingUpdate
+    rollingUpdate:
+{{- if eq .Values.global.gateway.kind "Deployment" }}
+      maxSurge: 2
+{{- end }}
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: gateway-{{ include "tyk-pro.fullname" . }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      # Enable backward compatibility to chart 0.8.1.
+      {{- if or .Values.global.gateway.enableIstioIngress .Values.enableIstioIngress }}
+      annotations:
+        traffic.sidecar.istio.io/excludeInboundPorts: "{{ .Values.global.gateway.containerPort}}"
+        traffic.sidecar.istio.io/includeInboundPorts: ""
+        traffic.sidecar.istio.io/excludeOutboundPorts: "{{ .Values.dashboard.containerPort }}"
+        traffic.sidecar.istio.io/includeOutboundPorts: ""
+      {{- end }}
+      labels:
+        app: gateway-{{ include "tyk-pro.fullname" . }}
+        release: {{ .Release.Name }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-gateway.yaml") . | sha256sum }}
+    spec:
+{{- if .Values.global.gateway.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.global.gateway.nodeSelector | indent 8 }}
+{{- end }}
+{{- if .Values.global.gateway.tolerations }}
+      tolerations:
+{{ toYaml .Values.global.gateway.tolerations | indent 8 }}
+{{- end }}
+{{- if .Values.global.gateway.affinity }}
+      affinity:
+{{ toYaml .Values.global.gateway.affinity | indent 8 }}
+{{- end }}
+      containers:
+      - name: gateway-{{ .Chart.Name }}
+        image: "{{ .Values.global.gateway.image.repository }}:{{ .Values.global.gateway.image.tag }}"
+        imagePullPolicy: {{ .Values.global.gateway.image.pullPolicy }}
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - all
+        env:
+          - name: TYK_GW_LISTENPORT
+            value: "{{ .Values.global.gateway.containerPort }}"
+          {{- if .Values.global.gateway.control.enabled }}
+          - name: TYK_GW_CONTROLAPIHOSTNAME
+            value: "{{ include "tyk-pro.gwproto" . }}://gateway-control-svc-{{  include "tyk-pro.fullname" . }}.{{ .Release.Namespace }}"
+          - name: TYK_GW_CONTROLAPIPORT
+            value: "{{ .Values.global.gateway.control.containerPort }}"
+          {{- end }}
+          # Lagacy support for Redis Cluster driver. Driver dropped in v3.0.0.
+          - name: REDIGOCLUSTER_SHARDCOUNT
+            value: "128"
+          - name: TYK_GW_STORAGE_ADDRS
+            value: {{ include "tyk-pro.redis_url" . | quote }}
+          - name: TYK_GW_STORAGE_ENABLECLUSTER
+            value: "{{ default "false" .Values.global.redis.enableCluster }}"
+          - name: TYK_GW_STORAGE_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ if .Values.global.secrets.useSecretName }} {{ .Values.global.secrets.useSecretName }} {{ else }} secrets-{{ include "tyk-pro.fullname" . }} {{ end}}
+                key: redisPass
+          - name: TYK_GW_STORAGE_DATABASE
+            value: "{{ default "0" .Values.global.redis.storage.database }}"
+          - name: TYK_GW_STORAGE_USESSL
+            value: "{{ default "false" .Values.global.redis.useSSL }}"
+        # Enable backward compatibility to chart 0.8.1.
+        {{- if or .Values.global.gateway.sharding .Values.enableSharding }}
+          - name: TYK_GW_DBAPPCONFOPTIONS_NODEISSEGMENTED
+            {{- if .Values.global.gateway.sharding }}
+            value: "{{ .Values.global.gateway.sharding.enabled }}"
+            {{- else }}
+            value: "{{ .Values.enableSharding }}"
+            {{- end }}
+        {{- end }}
+          - name: TYK_GW_DBAPPCONFOPTIONS_CONNECTIONSTRING
+            value: "{{ include "tyk-dashboard.proto" . }}://{{ include "tyk-pro.fullname" . }}-dashboard.{{ .Release.Namespace }}:{{ .Values.dashboard.service.port }}"
+          - name: TYK_GW_POLICIES_POLICYCONNECTIONSTRING
+            value: "{{ include "tyk-dashboard.proto" . }}://{{ include "tyk-pro.fullname" . }}-dashboard.{{ .Release.Namespace }}:{{ .Values.dashboard.service.port }}"
+          - name: TYK_GW_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: {{ if .Values.global.secrets.useSecretName }} {{ .Values.global.secrets.useSecretName }} {{ else }} secrets-{{ include "tyk-pro.fullname" . }} {{ end }}
+                key: APISecret
+          - name: TYK_GW_NODESECRET
+            valueFrom:
+              secretKeyRef:
+                name: {{ if .Values.global.secrets.useSecretName }} {{ .Values.global.secrets.useSecretName }} {{ else }} secrets-{{ include "tyk-pro.fullname" . }} {{ end }}
+                key: APISecret
+        # Enable backward compatibility to chart 0.8.1.
+        {{- if or .Values.global.gateway.sharding .Values.enableSharding}}
+          - name: TYK_GW_DBAPPCONFOPTIONS_TAGS
+            {{- if .Values.global.gateway.sharding }}
+            value: "{{ .Values.global.gateway.sharding.tags }}"
+            {{- else }}
+            value: "{{ .Values.global.gateway.tags }}"
+            {{- end }}
+        {{- end }}
+          - name: TYK_GW_HTTPSERVEROPTIONS_USESSL
+            value: "{{ .Values.global.gateway.tls }}"
+          {{- if .Values.global.gateway.extraEnvs }}
+          {{- toYaml .Values.global.gateway.extraEnvs| nindent 10 }}
+          {{- end }}
+        command: ["/opt/tyk-gateway/tyk", "--conf=/etc/tyk-gateway/tyk.conf"]
+        workingDir: /opt/tyk-gateway
+        ports:
+        - containerPort: {{ .Values.global.gateway.containerPort }}
+        {{- if .Values.global.gateway.control.enabled }}
+        - containerPort: {{ .Values.global.gateway.control.containerPort }}
+        {{- end }}
+        resources:
+{{ toYaml .Values.global.gateway.resources | indent 12 }}
+        volumeMounts:
+          - name: tyk-mgmt-gateway-conf
+            mountPath: /etc/tyk-gateway
+          - name: tyk-scratch
+            mountPath: /mnt/tyk-gateway
+          - name: {{ .Release.Name }}-default-cert
+            mountPath: /etc/certs
+          {{- if .Values.global.gateway.mounts }}
+          {{- range $secret := .Values.global.gateway.mounts }}
+          - name: {{ $.Release.Name }}-gateway-secret-{{ $secret.name }}
+            mountPath: {{ $secret.mountPath }}
+          {{- end }}
+          {{- end }}
+        livenessProbe:
+          httpGet:
+            scheme: "HTTP{{ if .Values.global.gateway.tls }}S{{ end }}"
+            path: /hello
+            {{- if and .Values.global.gateway.control.enabled (or (semverCompare "^3.2.x" (include "tyk-pro.gateway-version" . )) (semverCompare ">=3.0.4 < 3.1.0" (include "tyk-pro.gateway-version" .))) }}
+            port: {{ .Values.global.gateway.control.containerPort }}
+            {{- else }}
+            port: {{ .Values.global.gateway.containerPort }}
+            {{- end }}
+          initialDelaySeconds: 5
+          periodSeconds: 2
+          timeoutSeconds: 3
+          failureThreshold: 2
+        readinessProbe:
+          httpGet:
+            scheme: "HTTP{{ if .Values.global.gateway.tls }}S{{ end }}"
+            path: /hello
+            {{- if and .Values.global.gateway.control.enabled (or (semverCompare "^3.2.x" (include "tyk-pro.gateway-version" . )) (semverCompare ">=3.0.4 < 3.1.0" (include "tyk-pro.gateway-version" .))) }}
+            port: {{ .Values.global.gateway.control.containerPort }}
+            {{- else }}
+            port: {{ .Values.global.gateway.containerPort }}
+            {{- end }}
+          initialDelaySeconds: 1
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+      securityContext:
+        runAsUser: 1000
+        fsGroup: 2000
+      volumes:
+        - name: tyk-mgmt-gateway-conf
+          configMap:
+            name: mgmt-gateway-conf-{{ include "tyk-pro.fullname" . }}
+            items:
+              - key: tyk_mgmt.conf
+                path: tyk.conf
+        - name: tyk-scratch
+          emptyDir: {}
+        - name: {{ .Release.Name }}-default-cert
+          secret:
+            secretName: {{ .Release.Name }}-default-cert
+        {{- if .Values.global.gateway.mounts }}
+        {{- range $secret := .Values.global.gateway.mounts }}
+        - name: {{ $.Release.Name }}-gateway-secret-{{ $secret.name }}
+          secret:
+            secretName: {{ $.Release.Name }}-gateway-secret-{{ $secret.name }}
+        {{- end }}
+        {{- end }}
+{{- end }}

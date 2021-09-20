@@ -1,0 +1,38 @@
+{{- if and .Values.global.gateway.enabled .Values.global.gateway.ingress.enabled -}}
+{{- $fullName := include "tyk-pro.fullname" . -}}
+{{- $ingressPath := .Values.global.gateway.ingress.path -}}
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: gateway-ing-{{ $fullName }}
+  labels:
+    app: gateway-ing-{{ $fullName }}
+    chart: {{ include "tyk-pro.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  {{- with .Values.global.gateway.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+{{- if .Values.global.gateway.ingress.tls }}
+  tls:
+  {{- range .Values.global.gateway.ingress.tls }}
+    - hosts:
+      {{- range .hosts }}
+        - {{ . | quote }}
+      {{- end }}
+      secretName: {{ .secretName }}
+  {{- end }}
+{{- end }}
+  rules:
+  {{- range .Values.global.gateway.ingress.hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: {{ $ingressPath }}
+            backend:
+              serviceName: gateway-svc-{{ $fullName }}
+              servicePort: http
+  {{- end }}
+{{- end }}

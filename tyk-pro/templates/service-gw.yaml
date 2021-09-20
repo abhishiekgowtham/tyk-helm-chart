@@ -1,0 +1,30 @@
+{{- if .Values.global.gateway.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-svc-{{ include "tyk-pro.fullname" . }}
+  labels:
+    app: gateway-svc-{{ include "tyk-pro.fullname" . }}
+    chart: {{ include "tyk-pro.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+{{- if .Values.global.gateway.service.annotations }}
+  annotations:
+  {{- range $key, $value := .Values.global.gateway.service.annotations }}
+    {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}
+spec:
+  type: {{ .Values.global.gateway.service.type }}
+  ports:
+  - port: {{ .Values.global.gateway.service.port }}
+    targetPort: {{ .Values.global.gateway.containerPort }}
+    protocol: TCP
+    name: http
+  selector:
+    app: gateway-{{ include "tyk-pro.fullname" . }}
+    release: {{ .Release.Name }}
+{{- if eq .Values.global.gateway.service.type "LoadBalancer" }}
+  externalTrafficPolicy: {{ .Values.global.gateway.service.externalTrafficPolicy }}
+{{- end }}
+{{- end }}

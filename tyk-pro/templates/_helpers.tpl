@@ -1,0 +1,71 @@
+{{- /* vim: set filetype=mustache: */}}
+{{- /*
+Expand the name of the chart.
+*/}}
+{{- define "tyk-pro.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- /*
+Create a default fully qualified app name.
+We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
+If release name contains chart name it will be used as a full name.
+*/}}
+{{- define "tyk-pro.fullname" -}}
+{{- if .Values.fullnameOverride -}}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $name := default .Chart.Name .Values.nameOverride -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- /*
+Create chart name and version as used by the chart label.
+*/}}
+{{- define "tyk-pro.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "tyk-pro.gwproto" -}}
+{{- if .Values.global.gateway.tls -}}
+https
+{{- else -}}
+http
+{{- end -}}
+{{- end -}}
+
+{{- define "tyk-pro.gateway_url" -}}
+{{ include "tyk-pro.gwproto" . }}://gateway-svc-{{ include "tyk-pro.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.global.gateway.service.port }}
+{{- end -}}
+
+{{- define "tyk-pro.redis_url" -}}
+{{- if .Values.global.redis.addrs -}}
+{{ join "," .Values.global.redis.addrs }}
+{{- /* Adds support for older charts with the host and port options */}}
+{{- else if and .Values.global.redis.host .Values.global.redis.port -}}
+{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}
+{{- else -}}
+redis.{{ .Release.Namespace }}.svc.cluster.local:6379
+{{- end -}}
+{{- end -}}
+
+{{- define "tyk-pro.mongo_url" -}}
+{{- if .Values.global.mongo.mongoURL -}}
+{{ .Values.global.mongo.mongoURL }}
+{{- /* Adds support for older charts with the host and port options */}}
+{{- else if and .Values.global.mongo.host .Values.global.mongo.port -}}
+mongodb://{{ .Values.global.mongo.host }}:{{ .Values.global.mongo.port }}/tyk_analytics
+{{- else -}}
+mongodb://mongo.{{ .Release.Namespace }}.svc.cluster.local:27017/tyk_analytics
+{{- end -}}
+{{- end -}}
+
+{{- /* Create Semantic Version of gateway without prefix v */}}
+{{- define "tyk-pro.gateway-version" -}}
+{{- printf "%s" .Values.global.gateway.image.tag | replace "v" "" -}}
+{{- end -}}
